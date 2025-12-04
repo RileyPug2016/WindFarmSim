@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Twin Demonstrator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .turbine-blades {
+            /* The transition is removed for smoother requestAnimationFrame-based animation */
+        }
+        .status-dot {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .data-packet {
+            position: absolute;
+            width: 8px;
+            height: 8px;
+            background-color: #22d3ee; /* cyan-400 */
+            border-radius: 50%;
+            opacity: 0.5;
+            animation: flow 2s linear forwards;
+            box-shadow: 0 0 5px #22d3ee, 0 0 10px #22d3ee;
+        }
+        @keyframes flow {
+            from { left: 0%; transform: scale(0.5); }
+            to { left: 100%; transform: scale(1.2); opacity: 0; }
+        }
+        .warning-indicator {
+            padding: 2px 4px;
+            border-radius: 0.375rem; /* rounded-md */
+            background-color: #374151; /* gray-700 */
+            color: #9ca3af; /* gray-400 */
+            font-size: 0.65rem; /* 10.4px */
+            line-height: 1;
+            text-align: center;
+            transition: all 0.3s ease;
+            font-weight: 600; /* semibold */
+            border: 1px solid #4b5563; /* gray-600 */
+        }
+        .warning-active {
+            background-color: #f59e0b; /* yellow-500 */
+            color: #1f2937; /* gray-800 */
+            border-color: #f59e0b;
+        }
+    </style>
+</head>
+<body class="bg-gray-900 text-white antialiased">
+
+    <main class="w-full max-w-7xl mx-auto p-4">
+        <div class="grid grid-cols-1 lg:grid-cols-[1fr_auto_1fr] gap-6 items-start">
+            
+            <!-- Physical Asset Column -->
+            <div id="physical-asset-column" class="flex flex-col gap-4">
+                <div class="bg-gray-800 rounded-2xl p-4 shadow-2xl border border-gray-700">
+                    <h2 class="text-xl font-semibold text-center mb-3">
+                        <span class="inline-block align-middle mr-2">🏭</span> Wind Farm (Physical Assets)
+                    </h2>
+                    <div id="wind-farm-container" class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <!-- Turbines will be injected here by JS -->
+                    </div>
+                </div>
+
+                <div class="bg-gray-800 rounded-2xl p-4 shadow-2xl border border-gray-700 text-center">
+                     <h2 class="text-sm font-semibold mb-2">Total Farm Output</h2>
+                    <p class="text-sm font-bold text-cyan-400 mb-2">
+                        <span id="total-power-output">0</span> kW / <span class="text-gray-400">500 kW Target</span>
+                    </p>
+                    <button id="high-wind-btn" class="bg-yellow-600 hover:bg-yellow-700 text-white font-bold py-1 px-3 rounded-lg transition-colors text-xs">Simulate High Wind Event</button>
+                    <p id="suggestion-text" class="text-xs text-yellow-300 mt-2 h-8"></p>
+                </div>
+            </div>
+
+            <!-- Data Flow Visual -->
+            <div class="hidden lg:flex items-center justify-center h-full pt-16">
+                 <div id="data-flow-container" class="relative w-16 h-96 mx-auto">
+                    <!-- Data packets will be injected here by JS -->
+                </div>
+            </div>
+
+            <!-- Digital Twin Column -->
+            <div id="digital-twin-column">
+                <div id="digital-twin-panel-wrapper" class="bg-gray-800 rounded-2xl p-4 shadow-2xl border border-gray-700">
+                    <h2 class="text-xl font-semibold text-center mb-1">
+                        <span class="inline-block align-middle mr-2">💻</span> Digital Twin Control Panel
+                    </h2>
+                     <div class="text-center mb-3">
+                        <span class="text-xs mr-2">Auto-Manager:</span>
+                        <button id="auto-manage-btn" class="bg-gray-600 hover:bg-gray-700 text-white font-bold py-1 px-3 rounded-lg transition-colors text-xs">
+                           OFF
+                        </button>
+                    </div>
+                    <div id="digital-twin-container" class="grid grid-cols-2 md:grid-cols-3 gap-3">
+                        <!-- Digital twin controls will be injected here by JS -->
+                    </div>
+                </div>
+
+                <!-- Predictive Stress Test Panel -->
+                <div id="stress-test-panel" class="bg-gray-800 rounded-2xl p-4 shadow-2xl border border-gray-700 mt-4 transition-all">
+                    <h2 class="text-xl font-semibold text-center mb-2">
+                        <span class="inline-block align-middle mr-2">🔬</span> Predictive Stress Test
+                    </h2>
+                    <p class="text-xs text-gray-400 text-center mb-3">Disconnect the twin to run accelerated 'what-if' scenarios without affecting real assets.</p>
+                    <div class="flex items-center justify-center mb-3">
+                        <button id="activate-sim-btn" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded-lg transition-colors text-sm">Activate Simulation Mode</button>
+                    </div>
+                    <div id="sim-controls" class="hidden space-y-3">
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label for="sim-power-target" class="block text-xs font-medium text-gray-400">New Power Target (kW)</label>
+                                <input type="number" id="sim-power-target" value="600" class="w-full bg-gray-700 rounded-lg p-2 text-center text-white mt-1 border border-gray-600">
+                            </div>
+                            <div>
+                                <label for="sim-duration" class="block text-xs font-medium text-gray-400">Test Duration (mins)</label>
+                                <input type="number" id="sim-duration" value="30" class="w-full bg-gray-700 rounded-lg p-2 text-center text-white mt-1 border border-gray-600">
+                            </div>
+                        </div>
+                        <button id="run-sim-btn" class="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2 px-3 rounded-lg transition-colors disabled:bg-purple-900 disabled:cursor-not-allowed">Run Accelerated Test (60x Speed)</button>
+                        <div>
+                            <h4 class="text-sm font-semibold text-gray-300">Simulation Log:</h4>
+                            <div id="sim-results" class="bg-gray-900 rounded-lg p-2 mt-1 h-24 overflow-y-auto text-xs font-mono border border-gray-600">
+                                Awaiting test run...
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </main>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const FARM_SIZE = 6;
+            const POWER_TARGET = 500;
+            const POWER_TARGET_UPPER = POWER_TARGET * 1.1;
+            const POWER_TARGET_LOWER = POWER_TARGET * 0.9;
+
+            // --- STATE OBJECTS ---
+            const turbineStates = []; // For physical assets
+            let digitalTwinStates = []; // For the digital twin mirror/simulation
+            let isAutoManagerActive = false;
+            let isSimulationModeActive = false;
+            let simulationIntervalId = null;
+
+            // --- DOM ELEMENTS ---
+            const windFarmContainer = document.getElementById('wind-farm-container');
+            const digitalTwinContainer = document.getElementById('digital-twin-container');
+            const dataFlowContainer = document.getElementById('data-flow-container');
+            const totalPowerOutput = document.getElementById('total-power-output');
+            const highWindBtn = document.getElementById('high-wind-btn');
+            const suggestionText = document.getElementById('suggestion-text');
+            const autoManageBtn = document.getElementById('auto-manage-btn');
+            
+            // Stress Test DOM Elements
+            const stressTestPanel = document.getElementById('stress-test-panel');
+            const activateSimBtn = document.getElementById('activate-sim-btn');
+            const simControls = document.getElementById('sim-controls');
+            const simPowerTarget = document.getElementById('sim-power-target');
+            const simDuration = document.getElementById('sim-duration');
+            const runSimBtn = document.getElementById('run-sim-btn');
+            const simResults = document.getElementById('sim-results');
+            const physicalAssetColumn = document.getElementById('physical-asset-column');
+
+            // --- INITIALIZATION ---
+            function initializeFarms() {
+                for (let i = 0; i < FARM_SIZE; i++) {
+                    const windSpeed = Math.floor(Math.random() * 20) + 5; // Start with random wind
+                    const turbineState = {
+                        id: i,
+                        isOn: false,
+                        windSpeed: windSpeed,
+                        rpm: 0,
+                        powerOutput: 0,
+                        temperature: 20,
+                        status: 'OFFLINE',
+                        rpmTimer: 0, // seconds above 100rpm
+                        isCoolingDown: false,
+                        bladesElement: null,
+                        animationState: {
+                            currentRotation: 0,
+                            displayedRpm: 0,
+                        }
+                    };
+                    turbineStates.push(turbineState);
+                    createPhysicalTurbineAsset(turbineState);
+                    createDigitalTwinControl(turbineState);
+                }
+                digitalTwinStates = JSON.parse(JSON.stringify(turbineStates)); // Initial deep copy
+            }
+            
+            // --- ASSET CREATION ---
+            function createPhysicalTurbineAsset(state) {
+                const turbineWrapper = document.createElement('div');
+                turbineWrapper.className = 'bg-gray-900 rounded-lg p-2 flex flex-col items-center justify-center';
+                turbineWrapper.innerHTML = `
+                    <div class="relative w-16 h-16 mb-2">
+                        <div class="absolute bottom-0 left-1/2 -translate-x-1/2 w-1 h-8 bg-gray-400 rounded-t-sm"></div>
+                        <div class="absolute top-0 left-1/2 -translate-x-1/2 w-16 h-16">
+                            <div class="turbine-blades w-full h-full">
+                                <div class="absolute left-1/2 -translate-x-1/2 bottom-1/2 w-0.5 h-6 bg-gray-300 rounded origin-bottom" style="transform: rotate(0deg);"></div>
+                                <div class="absolute left-1/2 -translate-x-1/2 bottom-1/2 w-0.5 h-6 bg-gray-300 rounded origin-bottom" style="transform: rotate(120deg);"></div>
+                                <div class="absolute left-1/2 -translate-x-1/2 bottom-1/2 w-0.5 h-6 bg-gray-300 rounded origin-bottom" style="transform: rotate(240deg);"></div>
+                            </div>
+                            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-gray-500 rounded-full"></div>
+                        </div>
+                    </div>
+                    <div class="text-center w-full">
+                         <div class="mb-1">
+                            <span class="wind-speed-display text-xs font-bold text-cyan-400">${state.windSpeed} m/s</span>
+                            <input type="range" min="0" max="30" value="${state.windSpeed}" class="w-full h-1.5 bg-gray-700 rounded-lg appearance-none cursor-pointer mt-1 wind-speed-slider">
+                        </div>
+                        <button class="toggle-btn bg-green-600 hover:bg-green-700 text-white font-bold py-1 px-3 rounded-lg transition-colors text-xs">ON</button>
+                    </div>
+                `;
+                windFarmContainer.appendChild(turbineWrapper);
+                state.bladesElement = turbineWrapper.querySelector('.turbine-blades');
+
+                // Event Listeners for physical controls
+                const slider = turbineWrapper.querySelector('.wind-speed-slider');
+                const display = turbineWrapper.querySelector('.wind-speed-display');
+                const toggleBtn = turbineWrapper.querySelector('.toggle-btn');
+
+                slider.addEventListener('input', (e) => {
+                    state.windSpeed = parseInt(e.target.value, 10);
+                    display.textContent = `${state.windSpeed} m/s`;
+                });
+
+                toggleBtn.addEventListener('click', () => {
+                    state.isOn = !state.isOn;
+                });
+            }
+
+            function createDigitalTwinControl(state) {
+                 const controlWrapper = document.createElement('div');
+                controlWrapper.className = 'bg-gray-900 rounded-lg p-2 space-y-1 text-center';
+                controlWrapper.innerHTML = `
+                    <h4 class="text-xs font-bold">Turbine ${state.id + 1}</h4>
+                    <div class="flex justify-between items-center bg-gray-800 px-2 py-1 rounded-md text-xs">
+                        <span class="status-text font-semibold">OFFLINE</span>
+                        <div class="status-dot w-2 h-2 rounded-full bg-gray-500"></div>
+                    </div>
+                    <div class="grid grid-cols-3 gap-1 text-xs">
+                        <div class="bg-gray-800 p-1 rounded-md"><p class="rpm-data">0 RPM</p></div>
+                        <div class="bg-gray-800 p-1 rounded-md"><p class="power-data">0 kW</p></div>
+                        <div class="bg-gray-800 p-1 rounded-md"><p class="temp-data">20°C</p></div>
+                    </div>
+                    <div class="warning-indicator">SYSTEM OK</div>
+                    <button class="remote-shutdown-btn w-full bg-red-600 hover:bg-red-700 text-white font-bold py-1 px-2 rounded-lg transition-colors disabled:bg-red-900 disabled:cursor-not-allowed text-xs" disabled>Shutdown</button>
+                `;
+                digitalTwinContainer.appendChild(controlWrapper);
+
+                // Event Listener for remote shutdown
+                controlWrapper.querySelector('.remote-shutdown-btn').addEventListener('click', () => {
+                    if (turbineStates[state.id].isOn) {
+                        turbineStates[state.id].isOn = false;
+                    }
+                });
+            }
+
+            // --- SIMULATION LOGIC ---
+            function updateTurbinePhysics(state) {
+                 if (state.isOn) {
+                    state.rpm = Math.max(0, state.windSpeed * 8 - 10);
+                    state.powerOutput = Math.round((state.rpm / 100) ** 2.5 * 100);
+                    state.temperature += state.rpm / 100 - 0.2;
+
+                    if (state.rpm > 100) state.rpmTimer++; else state.rpmTimer = 0;
+
+                    // Update Status & Cooldown logic
+                    if (state.isCoolingDown) {
+                        state.status = 'COOLDOWN';
+                        if (state.temperature <= 40) state.isCoolingDown = false;
+                    } else if (state.temperature > 85) {
+                        state.status = 'WARNING';
+                        state.alert = 'High Temp!';
+                    } else if (state.rpmTimer > 10) {
+                        state.status = 'WARNING';
+                        state.alert = 'RPM Limit!';
+                    } else if (state.windSpeed > 25) {
+                        state.status = 'WARNING';
+                        state.alert = 'High Wind!';
+                    } else {
+                        state.status = 'ONLINE';
+                        state.alert = null;
+                    }
+                } else {
+                    state.rpm = Math.max(0, state.rpm - 15);
+                    state.powerOutput = 0;
+                    state.temperature = Math.max(20, state.temperature - 0.5);
+                    state.rpmTimer = 0;
+                    if (state.isCoolingDown) {
+                         state.status = 'COOLDOWN';
+                         if (state.temperature <= 40) state.isCoolingDown = false;
+                    } else {
+                        state.status = 'OFFLINE';
+                    }
+                    state.alert = null;
+                }
+                state.temperature = Math.max(20, Math.min(100, state.temperature));
+                state.rpm = Math.round(state.rpm);
+            }
+
+            // --- UI SYNCHRONIZATION ---
+            function syncAllUI() {
+                let totalPower = 0;
+                turbineStates.forEach(state => {
+                    totalPower += state.powerOutput;
+                    syncPhysicalTurbineUI(state);
+                });
+
+                if (!isSimulationModeActive) {
+                    digitalTwinStates = JSON.parse(JSON.stringify(turbineStates));
+                }
+                
+                digitalTwinStates.forEach(state => {
+                    syncDigitalTwinUI(state);
+                });
+
+                totalPowerOutput.textContent = totalPower;
+            }
+
+            function syncPhysicalTurbineUI(state) {
+                 const toggleBtn = windFarmContainer.children[state.id].querySelector('.toggle-btn');
+                if(state.isOn) {
+                    toggleBtn.textContent = 'OFF';
+                    toggleBtn.classList.remove('bg-green-600', 'hover:bg-green-700');
+                    toggleBtn.classList.add('bg-red-600', 'hover:bg-red-700');
+                } else {
+                    toggleBtn.textContent = 'ON';
+                    toggleBtn.classList.remove('bg-red-600', 'hover:bg-red-700');
+                    toggleBtn.classList.add('bg-green-600', 'hover:bg-green-700');
+                }
+            }
+
+            function syncDigitalTwinUI(state) {
+                const controlWrapper = digitalTwinContainer.children[state.id];
+                const statusText = controlWrapper.querySelector('.status-text');
+                const statusDot = controlWrapper.querySelector('.status-dot');
+                const warningIndicator = controlWrapper.querySelector('.warning-indicator');
+
+                statusText.textContent = state.status;
+                controlWrapper.querySelector('.rpm-data').textContent = `${state.rpm} RPM`;
+                controlWrapper.querySelector('.power-data').textContent = `${state.powerOutput} kW`;
+                controlWrapper.querySelector('.temp-data').textContent = `${state.temperature.toFixed(1)}°C`;
+                controlWrapper.querySelector('.remote-shutdown-btn').disabled = !state.isOn;
+
+                statusDot.className = 'status-dot w-2 h-2 rounded-full '; // reset classes
+                if (state.status === 'ONLINE') statusDot.classList.add('bg-green-500');
+                else if (state.status === 'WARNING') statusDot.classList.add('bg-yellow-500');
+                else if (state.status === 'COOLDOWN') statusDot.classList.add('bg-blue-500');
+                else statusDot.classList.add('bg-gray-500');
+
+                if (state.status === 'WARNING') {
+                    warningIndicator.classList.add('warning-active');
+                    warningIndicator.textContent = state.alert || 'WARNING';
+                } else {
+                    warningIndicator.classList.remove('warning-active');
+                    warningIndicator.textContent = 'SYSTEM OK';
+                }
+            }
+
+            // --- AUTO MANAGER ---
+             function manageFarmToTarget(farmState, target) {
+                let currentPower = farmState.reduce((sum, state) => sum + (state.isOn ? state.powerOutput : 0), 0);
+                
+                // Safety shutdowns first
+                farmState.forEach(state => {
+                    if (state.isOn && state.status === 'WARNING') {
+                        state.isOn = false;
+                        state.isCoolingDown = true;
+                    }
+                });
+
+                // Get sorted lists of turbines
+                const offlineHealthyTurbines = farmState
+                    .filter(s => !s.isOn && !s.isCoolingDown)
+                    .sort((a, b) => (b.windSpeed * 8) - (a.windSpeed * 8)); // sort by potential power
+
+                const onlineTurbines = farmState
+                    .filter(s => s.isOn)
+                    .sort((a, b) => a.powerOutput - b.powerOutput); // sort by lowest power
+
+                // Turn on turbines if below target
+                if (currentPower < POWER_TARGET_LOWER) {
+                    if (offlineHealthyTurbines.length > 0) {
+                        offlineHealthyTurbines[0].isOn = true; // Turn on the most powerful available
+                    }
+                } 
+                // Turn off turbines if above target
+                else if (currentPower > POWER_TARGET_UPPER) {
+                    if (onlineTurbines.length > 1) { // Always keep at least one on if possible
+                         onlineTurbines[0].isOn = false; // Turn off the least powerful
+                    }
+                }
+            }
+
+            // --- DATA FLOW ---
+            function createDataPacket() {
+                if (turbineStates.some(s => s.isOn)) {
+                    const packet = document.createElement('div');
+                    packet.className = 'data-packet';
+                    packet.style.top = `${Math.random() * 95}%`;
+                    dataFlowContainer.appendChild(packet);
+                    setTimeout(() => packet.remove(), 2000);
+                }
+            }
+
+            // --- ANIMATION ---
+            let lastTimestamp = 0;
+            function animateBlades(timestamp) {
+                const deltaTime = (timestamp - lastTimestamp) / 1000;
+                lastTimestamp = timestamp;
+
+                turbineStates.forEach(state => {
+                    if (!state.bladesElement || !deltaTime) return;
+                    const easingFactor = 0.05;
+                    state.animationState.displayedRpm += (state.rpm - state.animationState.displayedRpm) * easingFactor;
+                    const degreesPerSecond = (state.animationState.displayedRpm / 60) * 360;
+                    state.animationState.currentRotation += degreesPerSecond * deltaTime;
+                    state.bladesElement.style.transform = `rotate(${state.animationState.currentRotation}deg)`;
+                });
+                
+                requestAnimationFrame(animateBlades);
+            }
+
+            // --- EVENT LISTENERS ---
+            highWindBtn.addEventListener('click', () => {
+                turbineStates.forEach(state => { state.windSpeed = 21; });
+                calculateAndDisplaySuggestion();
+            });
+
+            autoManageBtn.addEventListener('click', () => {
+                isAutoManagerActive = !isAutoManagerActive;
+                autoManageBtn.textContent = isAutoManagerActive ? 'ON' : 'OFF';
+                autoManageBtn.classList.toggle('bg-green-600', isAutoManagerActive);
+                autoManageBtn.classList.toggle('bg-gray-600', !isAutoManagerActive);
+            });
+
+            // --- STRESS TEST LISTENERS ---
+            activateSimBtn.addEventListener('click', () => {
+                isSimulationModeActive = !isSimulationModeActive;
+                if (isSimulationModeActive) {
+                    activateSimBtn.textContent = 'Deactivate Simulation Mode';
+                    activateSimBtn.classList.replace('bg-blue-600', 'bg-gray-600');
+                    stressTestPanel.classList.add('border-blue-500');
+                    simControls.classList.remove('hidden');
+                    runSimBtn.disabled = false;
+                    physicalAssetColumn.style.opacity = '0.5';
+                    physicalAssetColumn.style.pointerEvents = 'none';
+                    simResults.innerHTML = 'Simulation mode active. Ready for test.';
+                } else {
+                    activateSimBtn.textContent = 'Activate Simulation Mode';
+                    activateSimBtn.classList.replace('bg-gray-600', 'bg-blue-600');
+                    stressTestPanel.classList.remove('border-blue-500');
+                    simControls.classList.add('hidden');
+                    physicalAssetColumn.style.opacity = '1';
+                    physicalAssetColumn.style.pointerEvents = 'auto';
+                    clearInterval(simulationIntervalId);
+                }
+            });
+
+            runSimBtn.addEventListener('click', () => {
+                runSimBtn.disabled = true;
+                simResults.innerHTML = '';
+                
+                const target = parseInt(simPowerTarget.value, 10);
+                const durationMinutes = parseInt(simDuration.value, 10);
+                const durationSeconds = durationMinutes * 60;
+                let simulatedTime = 0;
+                let predictedFailures = 0;
+
+                // Reset twin state for the simulation run
+                digitalTwinStates.forEach(s => {
+                    s.isOn = false;
+                    s.temperature = 20;
+                    s.rpm = 0;
+                    s.rpmTimer = 0;
+                    s.isCoolingDown = false;
+                });
+
+                function logMessage(msg) {
+                    simResults.innerHTML += `<div>${msg}</div>`;
+                    simResults.scrollTop = simResults.scrollHeight;
+                }
+
+                logMessage(`[00:00] Starting test: ${durationMinutes} mins, target ${target}kW.`);
+
+                simulationIntervalId = setInterval(() => {
+                    simulatedTime++;
+                    
+                    // 1. Update physics with unstable wind
+                    digitalTwinStates.forEach(state => {
+                        state.windSpeed = Math.floor(Math.random() * (23 - 15 + 1)) + 15;
+                        updateTurbinePhysics(state);
+                    });
+
+                    // 2. Run auto-manager on the twin
+                    manageFarmToTarget(digitalTwinStates, target);
+
+                    // 3. Sync UI and log failures
+                    digitalTwinStates.forEach(state => {
+                        syncDigitalTwinUI(state);
+                        if (state.status === 'WARNING' && state.isCoolingDown) {
+                            predictedFailures++;
+                             const mins = Math.floor(simulatedTime / 60).toString().padStart(2, '0');
+                             const secs = (simulatedTime % 60).toString().padStart(2, '0');
+                             logMessage(`<span class="text-yellow-400">[${mins}:${secs}] Turbine ${state.id + 1} predicted failure (${state.alert})</span>`);
+                        }
+                    });
+
+                    if (simulatedTime >= durationSeconds) {
+                        clearInterval(simulationIntervalId);
+                        runSimBtn.disabled = false;
+                        logMessage(`<span class="text-green-400">Test Complete. Predicted failures: ${predictedFailures}.</span>`);
+                    }
+
+                }, 1000 / 60); // 60x speed
+            });
+
+            // --- SUGGESTION LOGIC ---
+            function calculateAndDisplaySuggestion() {
+                const HIGH_WIND_SPEED = 21;
+                const MIN_TARGET_POWER = 500;
+                const MAX_TARGET_POWER = 550;
+                const COOLING_BUFFER = 2;
+
+                const potentialRpm = Math.max(0, HIGH_WIND_SPEED * 8 - 10);
+                const potentialPowerPerTurbine = Math.round((potentialRpm / 100) ** 2.5 * 100);
+
+                if (potentialPowerPerTurbine <= 0) {
+                    suggestionText.textContent = 'At this wind speed, turbines generate no power.';
+                    return;
+                }
+
+                const atRiskTurbineCount = turbineStates.filter(state => state.isOn).length;
+                const minActiveTurbines = Math.ceil(MIN_TARGET_POWER / potentialPowerPerTurbine);
+                const recommendedFarmSize = minActiveTurbines + atRiskTurbineCount + COOLING_BUFFER;
+                const additionalTurbinesNeeded = Math.max(0, recommendedFarmSize - FARM_SIZE);
+                let recommendationMessage = `With ${atRiskTurbineCount} active turbine(s) failing, you need ${minActiveTurbines} to maintain the target. `;
+
+                if (additionalTurbinesNeeded > 0) {
+                    recommendationMessage += `Suggest adding ${additionalTurbinesNeeded} turbine(s) for a total farm of ${recommendedFarmSize}.`;
+                } else {
+                    recommendationMessage += `The current farm of ${FARM_SIZE} is sufficient (Recommended: ${recommendedFarmSize}).`;
+                }
+                suggestionText.textContent = `Recommendation: ${recommendationMessage}`;
+                setTimeout(() => { suggestionText.textContent = ''; }, 12000);
+            }
+
+            // --- MAIN LOOP ---
+            setInterval(() => {
+                turbineStates.forEach(state => updateTurbinePhysics(state));
+                if (isAutoManagerActive && !isSimulationModeActive) {
+                    manageFarmToTarget(turbineStates, POWER_TARGET);
+                }
+                syncAllUI();
+            }, 1000);
+
+            setInterval(createDataPacket, 400);
+
+            // --- STARTUP ---
+            initializeFarms();
+            lastTimestamp = performance.now();
+            requestAnimationFrame(animateBlades);
+        });
+    </script>
+</body>
+</html>
+
